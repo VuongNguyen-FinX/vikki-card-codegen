@@ -187,19 +187,22 @@ async function runWizard() {
 }
 
 async function resolveConfig() {
+  const noArgs = process.argv.slice(2).length === 0;
   const haveAll = REQUIRED.every((k) => args[k]);
-  if (args.interactive || !haveAll) {
-    if (!haveAll && !args.interactive) {
-      // Missing flags: only auto-wizard when we actually have an interactive TTY.
-      if (!process.stdin.isTTY) {
-        const missing = REQUIRED.filter((k) => !args[k]);
-        console.error(
-          `[gen-card-scheme] Missing required flags: ${missing
-            .map((m) => '--' + m)
-            .join(', ')}\n${USAGE}`,
-        );
-        process.exit(1);
-      }
+
+  // Run the wizard when: launched with no args at all, explicitly asked for it,
+  // or some required flags are missing.
+  if (noArgs || args.interactive || !haveAll) {
+    // Only block when the user passed SOME flags but not all AND there's no TTY
+    // and nothing piped to read from (e.g. a misconfigured CI invocation).
+    if (!noArgs && !args.interactive && !process.stdin.isTTY) {
+      const missing = REQUIRED.filter((k) => !args[k]);
+      console.error(
+        `[gen-card-scheme] Missing required flags: ${missing
+          .map((m) => '--' + m)
+          .join(', ')}\n${USAGE}`,
+      );
+      process.exit(1);
     }
     return runWizard();
   }
