@@ -13,7 +13,41 @@ host-app needed.
 
 ## Run it (any machine)
 
-From **inside** a `vikki-host-app` checkout (it auto-detects the repo root):
+From **inside** a `vikki-host-app` checkout (it auto-detects the repo root).
+
+### Interactive (recommended)
+
+Run with **no flags** — it launches a wizard that asks for the scheme name, asset
+names (shadow/layout names are auto-suggested), and the **paths to your `.webp`
+image files** (which it copies into the right asset folders, renamed):
+
+```bash
+npx github:<your-org>/vikki-card-codegen
+# or force it explicitly:
+npx github:<your-org>/vikki-card-codegen --interactive
+```
+
+Example session:
+
+```
+=== gen-card-scheme — interactive ===
+
+  Tên scheme (enum CARD_PRODUCT_SCHEME): VIKKI_ONE_CONNECT_PP_VICTORIA_PRESCHOOL
+  Giá trị enum (string) [VIKKI_ONE_CONNECT_PP_VICTORIA_PRESCHOOL]:
+  Base CardProductName [VIKKI_ONE_CONNECT_PREPAID]:
+  Tên asset thẻ (card): VikkiOneConnectPrepaidMarina
+  Tên asset shadow [VikkiOneConnectPrepaidMarinaShadow]:
+  Tên asset layout [VikkiOneConnectPrepaidMarinaLayout]: VikkiGoProPrepaidMarinaCardLayout
+
+  Đường dẫn file ảnh (.webp) — Enter để bỏ qua, copy sau:
+    → file ảnh thẻ: ~/Downloads/marina-card.webp
+    → file ảnh shadow: ~/Downloads/marina-shadow.webp
+    → file ảnh layout: ~/Downloads/marina-layout.webp
+
+Ghi thay đổi ngay? (y = write, n = dry-run) [y]:
+```
+
+### Non-interactive (CI / scripted)
 
 ```bash
 npx github:<your-org>/vikki-card-codegen \
@@ -21,7 +55,10 @@ npx github:<your-org>/vikki-card-codegen \
   --base   VIKKI_ONE_CONNECT_PREPAID \
   --card   VikkiOneConnectPrepaidMarina \
   --shadow VikkiOneConnectPrepaidMarinaShadow \
-  --layout VikkiGoProPrepaidMarinaCardLayout
+  --layout VikkiGoProPrepaidMarinaCardLayout \
+  --card-img   ./marina-card.webp \
+  --shadow-img ./marina-shadow.webp \
+  --layout-img ./marina-layout.webp
 ```
 
 `npx` clones the repo, installs `ts-morph` automatically, and runs the bin.
@@ -51,8 +88,12 @@ If you are not inside the repo, point at it explicitly: `--root /path/to/vikki-h
 | `--card`    | yes      | card image asset name in `vikki-go-card/assets`                     |
 | `--shadow`  | yes      | shadow image asset name in `vikki-go-card/assets`                   |
 | `--layout`  | yes      | layout image asset name in `assets/new-images/card`                 |
+| `--card-img`   | no    | source `.webp` for the card image (copied + renamed to `--card`)    |
+| `--shadow-img` | no    | source `.webp` for the shadow image                                 |
+| `--layout-img` | no    | source `.webp` for the layout image                                 |
 | `--value`   | no       | enum string value (defaults to `--scheme`)                          |
 | `--root`    | no       | path to `vikki-host-app` root (default: auto-detect from cwd)        |
+| `--interactive`, `-i` | no | force the interactive wizard                                      |
 | `--dry-run` | no       | print planned changes, write nothing                                |
 
 ## Files edited (9)

@@ -54,6 +54,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--dry-run') out.dryRun = true;
     else if (a === '--help' || a === '-h') out.help = true;
+    else if (a === '--interactive' || a === '-i') out.interactive = true;
     else if (a.startsWith('--')) out[a.slice(2)] = argv[++i];
   }
   return out;
@@ -71,11 +72,19 @@ Required:
   --shadow <Asset>   shadow image asset name in vikki-go-card/assets
   --layout <Asset>   layout image asset name in assets/new-images/card
 
+Image files (optional — copied into the asset folders, renamed to the asset name):
+  --card-img   <path>  source .webp for the card image
+  --shadow-img <path>  source .webp for the shadow image
+  --layout-img <path>  source .webp for the layout image
+
 Optional:
   --value  <str>     enum string value (defaults to --scheme)
   --root   <path>    path to vikki-host-app root (default: auto-detect from cwd)
+  --interactive, -i  force the interactive wizard
   --dry-run          print planned changes, write nothing
   --help, -h         show this help
+
+Run with no flags (in a TTY) to launch the interactive wizard.
 `;
 
 if (args.help) {
@@ -84,25 +93,118 @@ if (args.help) {
 }
 
 const REQUIRED = ['scheme', 'base', 'card', 'shadow', 'layout'];
-const missing = REQUIRED.filter((k) => !args[k]);
-if (missing.length) {
-  console.error(
-    `[gen-card-scheme] Missing required flags: ${missing
-      .map((m) => '--' + m)
-      .join(', ')}\n${USAGE}`,
-  );
-  process.exit(1);
+
+// `cfg` is filled in by resolveConfig() (flags or interactive wizard) before any
+// transform runs. Declared here so the transform functions can close over it.
+let cfg;
+
+/** Build cfg from a plain object of answers. */
+function buildCfg(a) {
+  return {
+    schemeKey: a.scheme,
+    schemeValue: a.value || a.scheme,
+    baseProduct: a.base,
+    cardAsset: a.card,
+    shadowAsset: a.shadow,
+    layoutAsset: a.layout,
+    cardImg: a['card-img'] || null,
+    shadowImg: a['shadow-img'] || null,
+    layoutImg: a['layout-img'] || null,
+    dryRun: !!a.dryRun,
+  };
 }
 
-const cfg = {
-  schemeKey: args.scheme,
-  schemeValue: args.value || args.scheme,
-  baseProduct: args.base,
-  cardAsset: args.card,
-  shadowAsset: args.shadow,
-  layoutAsset: args.layout,
-  dryRun: !!args.dryRun,
-};
+/**
+ * Robust line reader: queues stdin lines so repeated prompts never drop input
+ * (plain readline.question loses lines on fast piped/file input). Works for both
+ * an interactive TTY and piped/scripted stdin.
+ */
+function makeAsker() {
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: !!process.stdin.isTTY,
+  });
+  const queue = [];
+  const waiters = [];
+  let closed = false;
+  rl.on('line', (line) => {
+    if (waiters.length) waiters.shift()(line);
+    else queue.push(line);
+  });
+  rl.on('close', () => {
+    closed = true;
+    while (waiters.length) waiters.shift()(null);
+  });
+  const nextLine = () =>
+    new Promise((res) => {
+      if (queue.length) return res(queue.shift());
+      if (closed) return res(null);
+      waiters.push(res);
+    });
+  const ask = async (text, def) => {
+    process.stdout.write(`  ${text}${def ? ` [${def}]` : ''}: `);
+    const line = await nextLine();
+    return (line && line.trim()) || def || '';
+  };
+  return { ask, close: () => rl.close(), isClosed: () => closed };
+}
+
+/** Interactive prompt — stdlib only, no extra deps. */
+async function runWizard() {
+  const { ask, close, isClosed } = makeAsker();
+  const askRequired = async (text, def) => {
+    let v = '';
+    while (!v) {
+      v = await ask(text, def);
+      if (!v) {
+        if (isClosed()) throw new Error(`input ended before "${text}" was given`);
+        console.log('    (required)');
+      }
+    }
+    return v;
+  };
+
+  console.log('\n=== gen-card-scheme — interactive ===\n');
+  const a = {};
+  a.scheme = await askRequired('Tên scheme (enum CARD_PRODUCT_SCHEME)');
+  a.value = await ask('Giá trị enum (string)', a.scheme);
+  a.base = await ask('Base CardProductName', 'VIKKI_ONE_CONNECT_PREPAID');
+  a.card = await askRequired('Tên asset thẻ (card)');
+  a.shadow = await ask('Tên asset shadow', `${a.card}Shadow`);
+  a.layout = await ask('Tên asset layout', `${a.card}Layout`);
+
+  console.log('\n  Đường dẫn file ảnh (.webp) — Enter để bỏ qua, copy sau:');
+  a['card-img'] = await ask('  → file ảnh thẻ');
+  a['shadow-img'] = await ask('  → file ảnh shadow');
+  a['layout-img'] = await ask('  → file ảnh layout');
+
+  const proceed = await ask('\nGhi thay đổi ngay? (y = write, n = dry-run)', 'y');
+  a.dryRun = !/^y(es)?$/i.test(proceed);
+  close();
+  return buildCfg(a);
+}
+
+async function resolveConfig() {
+  const haveAll = REQUIRED.every((k) => args[k]);
+  if (args.interactive || !haveAll) {
+    if (!haveAll && !args.interactive) {
+      // Missing flags: only auto-wizard when we actually have an interactive TTY.
+      if (!process.stdin.isTTY) {
+        const missing = REQUIRED.filter((k) => !args[k]);
+        console.error(
+          `[gen-card-scheme] Missing required flags: ${missing
+            .map((m) => '--' + m)
+            .join(', ')}\n${USAGE}`,
+        );
+        process.exit(1);
+      }
+    }
+    return runWizard();
+  }
+  return buildCfg(args);
+}
 
 // ---------------------------------------------------------------------------
 // Locate the vikki-host-app root
@@ -264,8 +366,8 @@ function txGoAssets() {
     const b = ensureNamedExport(sf, asset);
     if (a || b) logChange(FILES.goAssets, `register asset ${asset}`);
     else logSkip(FILES.goAssets, `${asset} already registered`);
-    if (!fs.existsSync(P(`src/modules/vikki-go-card/assets/${asset}.webp`)))
-      warnings.push(`Missing asset file: vikki-go-card/assets/${asset}.webp`);
+    const rel = `src/modules/vikki-go-card/assets/${asset}.webp`;
+    if (!assetWillExist(rel)) warnings.push(`Missing asset file: ${rel}`);
   }
 }
 
@@ -275,8 +377,8 @@ function txCardImages() {
   const b = ensureNamedExport(sf, cfg.layoutAsset);
   if (a || b) logChange(FILES.cardImages, `register layout asset ${cfg.layoutAsset}`);
   else logSkip(FILES.cardImages, `${cfg.layoutAsset} already registered`);
-  if (!fs.existsSync(P(`assets/new-images/card/${cfg.layoutAsset}.webp`)))
-    warnings.push(`Missing asset file: assets/new-images/card/${cfg.layoutAsset}.webp`);
+  const rel = `assets/new-images/card/${cfg.layoutAsset}.webp`;
+  if (!assetWillExist(rel)) warnings.push(`Missing asset file: ${rel}`);
 }
 
 function txVikkiCard() {
@@ -482,16 +584,65 @@ function formatChangedFiles() {
 }
 
 // ---------------------------------------------------------------------------
+// Asset images — copy provided files into the right folder, renamed to the asset
+// ---------------------------------------------------------------------------
+
+const copied = []; // { dest, from } — reported separately (not Prettier-formatted)
+
+/** True if the asset already exists on disk or will be copied this run. */
+function assetWillExist(rel) {
+  return fs.existsSync(P(rel)) || copied.some((c) => c.dest === rel);
+}
+
+function copyImages() {
+  const jobs = [
+    {
+      src: cfg.cardImg,
+      dest: `src/modules/vikki-go-card/assets/${cfg.cardAsset}.webp`,
+      label: 'card',
+    },
+    {
+      src: cfg.shadowImg,
+      dest: `src/modules/vikki-go-card/assets/${cfg.shadowAsset}.webp`,
+      label: 'shadow',
+    },
+    {
+      src: cfg.layoutImg,
+      dest: `assets/new-images/card/${cfg.layoutAsset}.webp`,
+      label: 'layout',
+    },
+  ];
+  for (const j of jobs) {
+    if (!j.src) continue;
+    const srcAbs = path.resolve(j.src);
+    if (!fs.existsSync(srcAbs)) {
+      warnings.push(`Image not found (${j.label}): ${j.src}`);
+      continue;
+    }
+    if (!srcAbs.toLowerCase().endsWith('.webp')) {
+      warnings.push(`Image (${j.label}) is not .webp: ${j.src} — copying as-is.`);
+    }
+    if (!cfg.dryRun) fs.copyFileSync(srcAbs, P(j.dest));
+    copied.push({ dest: j.dest, from: srcAbs });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 
-function main() {
+async function main() {
+  cfg = await resolveConfig();
+
   console.log(`\n[gen-card-scheme] root: ${ROOT}`);
   console.log(`  scheme       : ${cfg.schemeKey}`);
   console.log(`  base product : CardProductName.${cfg.baseProduct}`);
   console.log(`  card / shadow: ${cfg.cardAsset} / ${cfg.shadowAsset}`);
   console.log(`  layout       : ${cfg.layoutAsset}`);
   console.log(`  mode         : ${cfg.dryRun ? 'DRY RUN' : 'WRITE'}\n`);
+
+  // Copy images first so the "missing asset" warnings reflect the final state.
+  copyImages();
 
   const steps = [
     txConstants,
@@ -515,6 +666,11 @@ function main() {
   if (changes.length === 0) console.log('  (none — already wired)');
   for (const c of changes) console.log(`  + ${c.file}\n      ${c.action}`);
 
+  if (copied.length) {
+    console.log('\nImages copied:');
+    for (const c of copied) console.log(`  ⇒ ${c.dest}\n      from ${c.from}`);
+  }
+
   if (skips.length) {
     console.log('\nSkipped (idempotent):');
     for (const s of skips) console.log(`  = ${s.file} — ${s.reason}`);
@@ -531,10 +687,8 @@ function main() {
   );
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   console.error(`\n[gen-card-scheme] FAILED: ${err.message}\n`);
   console.error('No files were written.');
   process.exit(1);
-}
+});
