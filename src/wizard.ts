@@ -33,7 +33,11 @@ function makeAsker() {
       waiters.push(res);
     });
   const ask = async (text: string, def?: string): Promise<string> => {
-    process.stdout.write(`  ${text}${def ? ` [${def}]` : ''}: `);
+    // Use readline's own prompt (not a raw stdout.write) so it knows the
+    // prompt's length and math backspace/redraw against it correctly —
+    // otherwise backspace eats into the prompt text instead of the input.
+    rl.setPrompt(`  ${text}${def ? ` [${def}]` : ''}: `);
+    rl.prompt();
     const line = await nextLine();
     return (line && line.trim()) || def || '';
   };
