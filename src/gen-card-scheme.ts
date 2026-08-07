@@ -41,7 +41,7 @@ import { ROOT } from './project-root';
 import { TRANSFORMS } from './transforms';
 import { project } from './ast-utils';
 import { formatChangedFiles } from './format';
-import { copyImages } from './assets';
+import { planImageCopies, commitImageCopies } from './assets';
 import { changes, skips, warnings, copied } from './report';
 
 async function main(): Promise<void> {
@@ -54,12 +54,15 @@ async function main(): Promise<void> {
   console.log(`  layout       : ${cfg.layoutAsset}`);
   console.log(`  mode         : ${cfg.dryRun ? 'DRY RUN' : 'WRITE'}\n`);
 
-  // Copy images first so the "missing asset" warnings reflect the final state.
-  copyImages();
+  // Plan image copies first so the "missing asset" warnings reflect the final
+  // state — but don't touch disk yet, so a transform failure below leaves no
+  // stray files behind (see assets.ts for why plan/commit is split).
+  const plannedImages = planImageCopies();
 
   for (const step of TRANSFORMS) step();
 
   if (!cfg.dryRun) {
+    commitImageCopies(plannedImages);
     project.saveSync();
     formatChangedFiles();
   }

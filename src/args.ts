@@ -28,7 +28,6 @@ gen-card-scheme — wire a new prepaid card scheme variant into vikki-host-app.
 Required:
   --scheme <KEY>     enum member added to CARD_PRODUCT_SCHEME
   --base   <NAME>    CardProductName this scheme branches under (e.g. VIKKI_ONE_CONNECT_PREPAID)
-  --card   <Asset>   card image asset name in vikki-go-card/assets
   --shadow <Asset>   shadow image asset name in vikki-go-card/assets
   --layout <Asset>   layout image asset name in assets/new-images/card
 
@@ -39,6 +38,8 @@ Image files (optional — copied into the asset folders, renamed to the asset na
 
 Optional:
   --value  <str>     enum string value (defaults to --scheme)
+  --card   <Asset>   card image asset name (default: derived from --scheme, e.g.
+                      VIKKI_ONE_CONNECT_UEF_STUDENT → UefStudentVikkiOneConnect)
   --root   <path>    path to vikki-host-app root (default: auto-detect from cwd)
   --interactive, -i  force the interactive wizard
   --dry-run          print planned changes, write nothing
@@ -52,17 +53,48 @@ if (args.help) {
   process.exit(0);
 }
 
-export const REQUIRED = ['scheme', 'base', 'card', 'shadow', 'layout'] as const;
+export const REQUIRED = ['scheme', 'base', 'shadow', 'layout'] as const;
+
+/** SCREAMING_SNAKE / kebab segment → PascalCase word (`STUDENT_CERGY` → `StudentCergy`). */
+function toPascalCase(raw: string): string {
+  return raw
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join('');
+}
+
+/**
+ * Default asset base name when `--card` is omitted, derived from the scheme
+ * key/value: strip the shared `VIKKI_ONE_CONNECT_` prefix (if present) and
+ * PascalCase what's left, then re-append `VikkiOneConnect` so it reads the
+ * same as the hand-typed convention already used in the codebase
+ * (e.g. `VIKKI_ONE_CONNECT_UEF_STUDENT` → `UefStudentVikkiOneConnect`).
+ * Falls back to a plain PascalCase of the whole key when the prefix isn't
+ * there (i.e. the scheme doesn't branch under VIKKI_ONE_CONNECT_PREPAID).
+ */
+export function deriveAssetBase(schemeKey: string, schemeValue?: string): string {
+  const raw = schemeKey || schemeValue || '';
+  const PREFIX = 'VIKKI_ONE_CONNECT_';
+  const upper = raw.toUpperCase();
+  if (upper.startsWith(PREFIX)) {
+    return `${toPascalCase(raw.slice(PREFIX.length))}VikkiOneConnect`;
+  }
+  return toPascalCase(raw);
+}
 
 /** Build cfg from a plain object of answers (CLI flags or wizard responses). */
 export function buildCfg(a: RawArgs): Cfg {
+  const schemeKey = a.scheme as string;
+  const schemeValue = (a.value as string) || schemeKey;
+  const cardAsset = (a.card as string) || deriveAssetBase(schemeKey, schemeValue);
   return {
-    schemeKey: a.scheme as string,
-    schemeValue: (a.value as string) || (a.scheme as string),
+    schemeKey,
+    schemeValue,
     baseProduct: a.base as string,
-    cardAsset: a.card as string,
-    shadowAsset: a.shadow as string,
-    layoutAsset: a.layout as string,
+    cardAsset,
+    shadowAsset: (a.shadow as string) || `${cardAsset}Shadow`,
+    layoutAsset: (a.layout as string) || `${cardAsset}Layout`,
     cardImg: (a['card-img'] as string) || null,
     shadowImg: (a['shadow-img'] as string) || null,
     layoutImg: (a['layout-img'] as string) || null,

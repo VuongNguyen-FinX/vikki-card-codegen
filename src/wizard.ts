@@ -1,7 +1,7 @@
 // Interactive wizard — stdlib `readline` only, no extra deps.
 
 import type { Cfg } from './types';
-import { args, REQUIRED, USAGE, buildCfg, type RawArgs } from './args';
+import { args, REQUIRED, USAGE, buildCfg, deriveAssetBase, type RawArgs } from './args';
 
 /**
  * Robust line reader: queues stdin lines so repeated prompts never drop input
@@ -84,7 +84,8 @@ async function runWizard(): Promise<Cfg> {
   a.scheme = await askRequired('Tên scheme (enum CARD_PRODUCT_SCHEME)');
   a.value = await ask('Giá trị enum (string)', a.scheme as string);
   a.base = await ask('Base CardProductName', 'VIKKI_ONE_CONNECT_PREPAID');
-  a.card = await askRequired('Tên asset thẻ (card)');
+  const defaultCard = deriveAssetBase(a.scheme as string, a.value as string);
+  a.card = await ask('Tên asset thẻ (card)', defaultCard);
   a.shadow = await ask('Tên asset shadow', `${a.card}Shadow`);
   a.layout = await ask('Tên asset layout', `${a.card}Layout`);
 
