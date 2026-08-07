@@ -90,8 +90,8 @@ async function runWizard(): Promise<Cfg> {
 
   console.log('\n=== gen-card-scheme — interactive (org-card flow, PR #3378) ===\n');
   const a: RawArgs = {};
+  // CARD_PRODUCT_SCHEME key and string value are always identical — one prompt covers both.
   a.scheme = await askRequired('Tên scheme (enum CARD_PRODUCT_SCHEME)');
-  a.value = await ask('Giá trị enum CARD_PRODUCT_SCHEME (string)', a.scheme as string);
 
   const defaultTemplateKey = deriveTemplateKey(a.scheme as string);
   a['template-key'] = await ask('Tên enum CARD_TEMPLATE', defaultTemplateKey);

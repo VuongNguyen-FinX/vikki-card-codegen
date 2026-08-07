@@ -33,7 +33,6 @@ Required:
   --template-value  <str>   card-number prefix for CARD_TEMPLATE, e.g. VK0302391568E
 
 Optional (all asset/name flags default from --scheme when omitted):
-  --value          <str>    CARD_PRODUCT_SCHEME string value (default: --scheme)
   --template-key   <KEY>    CARD_TEMPLATE enum member (default: --scheme minus the
                              VIKKI_ONE_CONNECT_ prefix, e.g. DAMTC_EMPLOYEE)
   --brand          <Name>   PascalCase brand code seeding the asset defaults below
@@ -103,13 +102,13 @@ export function deriveHomeTodoKey(templateKey: string): string {
 /** Build cfg from a plain object of answers (CLI flags or wizard responses). */
 export function buildCfg(a: RawArgs): Cfg {
   const schemeKey = a.scheme as string;
-  const schemeValue = (a.value as string) || schemeKey;
   const templateKey = (a['template-key'] as string) || deriveTemplateKey(schemeKey);
   const brand = (a.brand as string) || deriveBrand(templateKey);
 
   return {
     schemeKey,
-    schemeValue,
+    // CARD_PRODUCT_SCHEME key and string value are always identical in this enum.
+    schemeValue: schemeKey,
     templateKey,
     templateValue: a['template-value'] as string,
 
