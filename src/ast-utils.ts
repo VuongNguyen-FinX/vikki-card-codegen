@@ -100,3 +100,66 @@ export function getUseMemoDeps(sf: SourceFile, varName: string) {
     .getArguments()[1]
     .asKindOrThrow(SyntaxKind.ArrayLiteralExpression);
 }
+
+/**
+ * Object literal a variable holds — whether declared directly
+ * (`const X: Record<...> = {...}`) or built via a call, e.g.
+ * `StyleSheet.create({...})` (the styles object is the call's first arg).
+ */
+export function getObjectLiteral(sf: SourceFile, varName: string) {
+  const decl = findVarDecl(sf, varName);
+  const init = decl.getInitializerOrThrow();
+  if (Node.isCallExpression(init)) {
+    return init.getArguments()[0].asKindOrThrow(SyntaxKind.ObjectLiteralExpression);
+  }
+  return init.asKindOrThrow(SyntaxKind.ObjectLiteralExpression);
+}
+
+/** Idempotently adds `[propName]: initializer` to an object literal. */
+export function ensureObjectProperty(
+  obj: ReturnType<typeof getObjectLiteral>,
+  propName: string,
+  initializer: string,
+): boolean {
+  const has = obj
+    .getProperties()
+    .some((p) => norm(p.getText()).startsWith(norm(propName)));
+  if (has) return false;
+  obj.addPropertyAssignment({ name: propName, initializer });
+  return true;
+}
+
+/** Idempotently adds a member to a TS `enum`. */
+export function ensureEnumMember(
+  sf: SourceFile,
+  enumName: string,
+  memberName: string,
+  value: string,
+): boolean {
+  const en = sf.getEnumOrThrow(enumName);
+  if (en.getMember(memberName)) return false;
+  en.addMember({ name: memberName, value });
+  return true;
+}
+
+/**
+ * Inserts `newStatementText` right after the statement whose text contains
+ * `anchorSubstring` (both compared with whitespace normalized). Used for
+ * repeated call-expression blocks (e.g. `todos[HomeTodoType.X] = ...;`) that
+ * aren't inside a single array/object literal we could just add a prop to.
+ */
+export function insertStatementAfter(
+  sf: SourceFile,
+  anchorSubstring: string,
+  newStatementText: string,
+): boolean {
+  const want = norm(anchorSubstring);
+  const anchor = sf
+    .getDescendantsOfKind(SyntaxKind.ExpressionStatement)
+    .find((s) => norm(s.getText()).includes(want));
+  if (!anchor) return false;
+  const block = anchor.getParentIfKindOrThrow(SyntaxKind.Block);
+  const idx = block.getStatements().indexOf(anchor);
+  (block as any).insertStatements(idx + 1, newStatementText);
+  return true;
+}

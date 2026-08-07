@@ -22,19 +22,34 @@ interface PlannedCopy {
 export function planImageCopies(): PlannedCopy[] {
   const jobs = [
     {
-      src: cfg.cardImg,
-      dest: `src/modules/vikki-go-card/assets/${cfg.cardAsset}.webp`,
-      label: 'card',
+      src: cfg.headerImg,
+      dest: `src/modules/cards/assets/org-card/${cfg.headerAsset}.webp`,
+      label: 'header',
     },
     {
-      src: cfg.shadowImg,
-      dest: `src/modules/vikki-go-card/assets/${cfg.shadowAsset}.webp`,
-      label: 'shadow',
+      src: cfg.bgImg,
+      dest: `src/modules/cards/assets/org-card/${cfg.bgAsset}.webp`,
+      label: 'bg',
+    },
+    {
+      src: cfg.frontImg,
+      dest: `src/modules/cards/assets/org-card/${cfg.frontAsset}.webp`,
+      label: 'front',
     },
     {
       src: cfg.layoutImg,
       dest: `assets/new-images/card/${cfg.layoutAsset}.webp`,
       label: 'layout',
+    },
+    {
+      src: cfg.bannerEnImg,
+      dest: `src/modules/cards/assets/banner-card-list/${cfg.bannerEnAsset}.webp`,
+      label: 'banner-en',
+    },
+    {
+      src: cfg.bannerViImg,
+      dest: `src/modules/cards/assets/banner-card-list/${cfg.bannerViAsset}.webp`,
+      label: 'banner-vi',
     },
   ];
   const planned: PlannedCopy[] = [];

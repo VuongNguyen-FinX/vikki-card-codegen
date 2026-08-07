@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 /**
- * gen-card-scheme — standalone AST codemod that wires a NEW prepaid card scheme
- * variant into the existing vikki-host-app source, mirroring PR #3215
- * (commit 48b74d4 "feat: card vikki one connect prepaid victoria").
+ * gen-card-scheme — standalone AST codemod that wires a NEW VIKKI_ONE_CONNECT
+ * org-card scheme variant into the existing vikki-host-app source, mirroring
+ * PR #3378 ("add org card DAMTC" — org-card / physical-card flow).
  *
  * Distributable as its own GitHub repo. Run on any machine with Node >= 16:
  *
  *   # from inside the vikki-host-app repo:
  *   npx github:<you>/vikki-card-codegen \
- *     --scheme VIKKI_ONE_CONNECT_PP_VICTORIA_PRESCHOOL \
- *     --base   VIKKI_ONE_CONNECT_PREPAID \
- *     --card   VikkiOneConnectPrepaidMarina \
- *     --shadow VikkiOneConnectPrepaidMarinaShadow \
- *     --layout VikkiGoProPrepaidMarinaCardLayout
+ *     --scheme VIKKI_ONE_CONNECT_DAMTC_EMPLOYEE \
+ *     --template-value VK0302391568E \
+ *     --brand DAMTC
  *
  * It locates the host-app root by walking up from the current directory (or use
  * --root <path>). It does NOT scaffold screens — it INJECTS small, well-anchored
- * snippets into 9 existing files via the TypeScript AST (ts-morph), so edits land
+ * snippets into 13 existing files via the TypeScript AST (ts-morph), so edits land
  * in the exact right node. Every step is idempotent. Binary .webp assets are NOT
  * generated (designer-provided); the tool registers them and warns if missing.
  *
@@ -48,10 +46,14 @@ async function main(): Promise<void> {
   setCfg(await resolveConfig());
 
   console.log(`\n[gen-card-scheme] root: ${ROOT}`);
-  console.log(`  scheme       : ${cfg.schemeKey}`);
-  console.log(`  base product : CardProductName.${cfg.baseProduct}`);
-  console.log(`  card / shadow: ${cfg.cardAsset} / ${cfg.shadowAsset}`);
+  console.log(`  scheme       : CARD_PRODUCT_SCHEME.${cfg.schemeKey} = '${cfg.schemeValue}'`);
+  console.log(`  template     : CARD_TEMPLATE.${cfg.templateKey} = '${cfg.templateValue}'`);
+  console.log(`  header / bg  : ${cfg.headerAsset} / ${cfg.bgAsset}`);
+  console.log(`  front        : ${cfg.frontAsset}`);
   console.log(`  layout       : ${cfg.layoutAsset}`);
+  console.log(`  banner en/vi : ${cfg.bannerEnAsset} / ${cfg.bannerViAsset}`);
+  console.log(`  home todo    : ${cfg.homeTodoKey}`);
+  console.log(`  text color   : ${cfg.textColor}`);
   console.log(`  mode         : ${cfg.dryRun ? 'DRY RUN' : 'WRITE'}\n`);
 
   // Plan image copies first so the "missing asset" warnings reflect the final

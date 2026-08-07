@@ -35,16 +35,22 @@ export const ROOT = findRoot();
 /** Resolve a path relative to the host-app root. */
 export const P = (rel: string): string => path.join(ROOT, rel);
 
+// Mirrors PR #3378 ("add org card DAMTC") — the org-card / physical-card flow,
+// not the older VIKKI_GO CVP onboarding flow (PR #3215).
 export const FILES = {
-  constants: 'src/modules/card-onboard/constants/index.ts',
-  goAssets: 'src/modules/vikki-go-card/assets/index.ts',
-  cardImages: 'assets/new-images/card/index.ts',
-  vikkiCard: 'src/components/vikki-card/VikkiCard.tsx',
-  ctaBanner: 'src/modules/cards/components/card-banners/CardCTABanner.tsx',
-  prepaidLayout: 'src/modules/cards/components/layout/PrepaidCardLayoutV3.tsx',
-  transitCvp: 'src/modules/vikki-go-card/screens/TransitCardCvpScreen.tsx',
-  saga: 'src/modules/vikki-go-card/store/saga/vikki-go.saga.ts',
-  navigation: 'src/modules/vikki-go-card/vikki-go-card.navigation.tsx',
+  schemeConstants: 'src/modules/card-onboard/constants/index.ts',
+  cardConstants: 'src/modules/cards/card.constants.ts',
+  layoutAssets: 'assets/new-images/card/index.ts',
+  bannerAssets: 'src/modules/cards/assets/banner-card-list/index.ts',
+  orgCardAssets: 'src/modules/cards/assets/org-card/index.ts',
+  orgCard: 'src/modules/cards/components/card-details/VikkiOrgCard.tsx',
+  orgName: 'src/modules/cards/components/card-details/VikkiOrgName.tsx',
+  dualCardLayout: 'src/modules/cards/components/layout/DualCardLayout.tsx',
+  cardBannerItem: 'src/modules/cards/components/card-banners/CardBannerItem.tsx',
+  cardActivation: 'src/modules/cards/screens/CardActivationScreen.tsx',
+  physicalCardIntro: 'src/modules/physical-card/screens/PhysicalCardIntroScreen.tsx',
+  todoItem: 'src/modules/dashboard/component/home-todo/TodoItem.tsx',
+  useHomeTodo: 'src/modules/dashboard/hook/useHomeTodo.ts',
 } as const;
 
 export type FileKey = keyof typeof FILES;

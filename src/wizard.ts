@@ -1,7 +1,16 @@
 // Interactive wizard — stdlib `readline` only, no extra deps.
 
 import type { Cfg } from './types';
-import { args, REQUIRED, USAGE, buildCfg, deriveAssetBase, type RawArgs } from './args';
+import {
+  args,
+  REQUIRED,
+  USAGE,
+  buildCfg,
+  deriveTemplateKey,
+  deriveBrand,
+  deriveHomeTodoKey,
+  type RawArgs,
+} from './args';
 
 /**
  * Robust line reader: queues stdin lines so repeated prompts never drop input
@@ -79,23 +88,54 @@ async function runWizard(): Promise<Cfg> {
     return v;
   };
 
-  console.log('\n=== gen-card-scheme — interactive ===\n');
+  console.log('\n=== gen-card-scheme — interactive (org-card flow, PR #3378) ===\n');
   const a: RawArgs = {};
   a.scheme = await askRequired('Tên scheme (enum CARD_PRODUCT_SCHEME)');
-  a.value = await ask('Giá trị enum (string)', a.scheme as string);
-  a.base = await ask('Base CardProductName', 'VIKKI_ONE_CONNECT_PREPAID');
-  const defaultCard = deriveAssetBase(a.scheme as string, a.value as string);
-  a.card = await ask('Tên asset thẻ (card)', defaultCard);
-  a.shadow = await ask('Tên asset shadow', `${a.card}Shadow`);
-  a.layout = await ask('Tên asset layout', `${a.card}Layout`);
+  a.value = await ask('Giá trị enum CARD_PRODUCT_SCHEME (string)', a.scheme as string);
+
+  const defaultTemplateKey = deriveTemplateKey(a.scheme as string);
+  a['template-key'] = await ask('Tên enum CARD_TEMPLATE', defaultTemplateKey);
+  a['template-value'] = await askRequired(
+    'Giá trị CARD_TEMPLATE (prefix số thẻ, vd VK0302391568E)',
+  );
+
+  const defaultBrand = deriveBrand(a['template-key'] as string);
+  a.brand = await ask('Brand code (tiền tố tên asset, vd DAMTC)', defaultBrand);
+  const brand = a.brand as string;
+
+  console.log('\n  Tên các asset (Enter để dùng gợi ý theo brand code):');
+  a.header = await ask('  → asset header (org-card)', `${brand}Header`);
+  a.bg = await ask('  → asset background (org-card)', `${brand}BG`);
+  a.front = await ask('  → asset mặt thẻ (physical card front)', `${brand}Front`);
+  a.layout = await ask('  → asset layout (dual-card)', `${brand}VikkiOneConnectLayout`);
+  a['banner-en'] = await ask(
+    '  → asset banner trang chủ (EN)',
+    `${brand}VikkiOneConnectBannerEN`,
+  );
+  a['banner-vi'] = await ask(
+    '  → asset banner trang chủ (VI)',
+    `${brand}VikkiOneConnectBannerVI`,
+  );
+
+  a['home-todo'] = await ask(
+    'Tên HomeTodoType (mục nhắc onboard ở trang chủ)',
+    deriveHomeTodoKey(a['template-key'] as string),
+  );
+  a.color = await ask(
+    'Màu chữ tên/ID/chức danh trên thẻ (VikkiOrgName)',
+    'Colors.Labels.StrongWhite',
+  );
 
   console.log(
     '\n  Đường dẫn file ảnh (.webp) — kéo-thả file vào terminal cũng được, hoặc Enter để bỏ qua:',
   );
   const askPath = async (text: string): Promise<string> => unescapeDroppedPath(await ask(text));
-  a['card-img'] = await askPath('  → file ảnh thẻ');
-  a['shadow-img'] = await askPath('  → file ảnh shadow');
+  a['header-img'] = await askPath('  → file ảnh header');
+  a['bg-img'] = await askPath('  → file ảnh background');
+  a['front-img'] = await askPath('  → file ảnh mặt thẻ');
   a['layout-img'] = await askPath('  → file ảnh layout');
+  a['banner-en-img'] = await askPath('  → file ảnh banner (EN)');
+  a['banner-vi-img'] = await askPath('  → file ảnh banner (VI)');
 
   const proceed = await ask('\nGhi thay đổi ngay? (y = write, n = dry-run)', 'y');
   a.dryRun = !/^y(es)?$/i.test(proceed);

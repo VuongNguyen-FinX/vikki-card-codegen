@@ -2,8 +2,9 @@
 // well-anchored snippet via the TypeScript AST. Every transform is idempotent:
 // it checks whether its edit is already present and logs a skip instead of
 // duplicating it.
+//
+// Mirrors PR #3378 ("add org card DAMTC") — the org-card / physical-card flow.
 
-import { SyntaxKind } from 'ts-morph';
 import { cfg } from './config';
 import { FILES } from './project-root';
 import { logChange, logSkip, warnings, assetWillExist } from './report';
@@ -12,224 +13,216 @@ import {
   ensureNamedImport,
   ensureRequireConst,
   ensureNamedExport,
-  norm,
-  findIf,
-  getUseMemoBlock,
-  getUseMemoDeps,
+  ensureEnumMember,
+  ensureObjectProperty,
+  insertStatementAfter,
+  getObjectLiteral,
 } from './ast-utils';
 
-export function txConstants(): void {
-  const sf = load(FILES.constants);
-  const en = sf.getEnumOrThrow('CARD_PRODUCT_SCHEME');
-  if (en.getMember(cfg.schemeKey)) {
-    logSkip(FILES.constants, `enum member ${cfg.schemeKey} already present`);
-    return;
-  }
-  en.addMember({ name: cfg.schemeKey, value: cfg.schemeValue });
-  logChange(FILES.constants, `add CARD_PRODUCT_SCHEME.${cfg.schemeKey}`);
+export function txSchemeConstants(): void {
+  const sf = load(FILES.schemeConstants);
+  const added = ensureEnumMember(
+    sf,
+    'CARD_PRODUCT_SCHEME',
+    cfg.schemeKey,
+    cfg.schemeValue,
+  );
+  if (added) logChange(FILES.schemeConstants, `add CARD_PRODUCT_SCHEME.${cfg.schemeKey}`);
+  else logSkip(FILES.schemeConstants, `enum member ${cfg.schemeKey} already present`);
 }
 
-export function txGoAssets(): void {
-  const sf = load(FILES.goAssets);
-  for (const asset of [cfg.cardAsset, cfg.shadowAsset]) {
-    const a = ensureRequireConst(sf, asset, `./${asset}.webp`);
-    const b = ensureNamedExport(sf, asset);
-    if (a || b) logChange(FILES.goAssets, `register asset ${asset}`);
-    else logSkip(FILES.goAssets, `${asset} already registered`);
-    const rel = `src/modules/vikki-go-card/assets/${asset}.webp`;
-    if (!assetWillExist(rel)) warnings.push(`Missing asset file: ${rel}`);
-  }
+export function txCardConstants(): void {
+  const sf = load(FILES.cardConstants);
+  const added = ensureEnumMember(
+    sf,
+    'CARD_TEMPLATE',
+    cfg.templateKey,
+    cfg.templateValue,
+  );
+  if (added) logChange(FILES.cardConstants, `add CARD_TEMPLATE.${cfg.templateKey}`);
+  else logSkip(FILES.cardConstants, `enum member ${cfg.templateKey} already present`);
 }
 
-export function txCardImages(): void {
-  const sf = load(FILES.cardImages);
+export function txLayoutAsset(): void {
+  const sf = load(FILES.layoutAssets);
   const a = ensureRequireConst(sf, cfg.layoutAsset, `./${cfg.layoutAsset}.webp`);
   const b = ensureNamedExport(sf, cfg.layoutAsset);
-  if (a || b) logChange(FILES.cardImages, `register layout asset ${cfg.layoutAsset}`);
-  else logSkip(FILES.cardImages, `${cfg.layoutAsset} already registered`);
+  if (a || b) logChange(FILES.layoutAssets, `register asset ${cfg.layoutAsset}`);
+  else logSkip(FILES.layoutAssets, `${cfg.layoutAsset} already registered`);
   const rel = `assets/new-images/card/${cfg.layoutAsset}.webp`;
   if (!assetWillExist(rel)) warnings.push(`Missing asset file: ${rel}`);
 }
 
-export function txVikkiCard(): void {
-  const sf = load(FILES.vikkiCard);
-  ensureNamedImport(sf, '@src/modules/card-onboard/constants', 'CARD_PRODUCT_SCHEME');
-  ensureNamedImport(sf, '@src/modules/vikki-go-card/assets', cfg.cardAsset);
+export function txBannerAssets(): void {
+  const sf = load(FILES.bannerAssets);
+  for (const asset of [cfg.bannerEnAsset, cfg.bannerViAsset]) {
+    const a = ensureRequireConst(sf, asset, `./${asset}.webp`);
+    const b = ensureNamedExport(sf, asset);
+    if (a || b) logChange(FILES.bannerAssets, `register asset ${asset}`);
+    else logSkip(FILES.bannerAssets, `${asset} already registered`);
+    const rel = `src/modules/cards/assets/banner-card-list/${asset}.webp`;
+    if (!assetWillExist(rel)) warnings.push(`Missing asset file: ${rel}`);
+  }
+}
 
-  const imageSource = sf
-    .getVariableDeclarationOrThrow('IMAGE_SOURCE')
-    .getInitializerIfKindOrThrow(SyntaxKind.ObjectLiteralExpression);
+export function txOrgCardAssets(): void {
+  const sf = load(FILES.orgCardAssets);
+  for (const asset of [cfg.headerAsset, cfg.bgAsset, cfg.frontAsset]) {
+    const a = ensureRequireConst(sf, asset, `./${asset}.webp`);
+    const b = ensureNamedExport(sf, asset);
+    if (a || b) logChange(FILES.orgCardAssets, `register asset ${asset}`);
+    else logSkip(FILES.orgCardAssets, `${asset} already registered`);
+    const rel = `src/modules/cards/assets/org-card/${asset}.webp`;
+    if (!assetWillExist(rel)) warnings.push(`Missing asset file: ${rel}`);
+  }
+}
+
+export function txOrgCard(): void {
+  const sf = load(FILES.orgCard);
+  ensureNamedImport(sf, '@src/modules/card-onboard/constants', 'CARD_PRODUCT_SCHEME');
+  ensureNamedImport(sf, '../../assets/org-card', cfg.headerAsset);
+  ensureNamedImport(sf, '../../assets/org-card', cfg.bgAsset);
+
   const propName = `[CARD_PRODUCT_SCHEME.${cfg.schemeKey}]`;
-  const hasProp = imageSource
-    .getProperties()
-    .some((p) => norm(p.getText()).startsWith(norm(propName)));
-  if (!hasProp) {
-    imageSource.addPropertyAssignment({
-      name: propName,
-      initializer: `{\n  front: ${cfg.cardAsset},\n  back: ${cfg.cardAsset},\n}`,
-    });
-    logChange(FILES.vikkiCard, `IMAGE_SOURCE[${cfg.schemeKey}]`);
+
+  const bgSource = getObjectLiteral(sf, 'BG_SOURCE');
+  if (ensureObjectProperty(bgSource, propName, cfg.bgAsset)) {
+    logChange(FILES.orgCard, `BG_SOURCE[${cfg.schemeKey}]`);
   } else {
-    logSkip(FILES.vikkiCard, `IMAGE_SOURCE entry for ${cfg.schemeKey} exists`);
+    logSkip(FILES.orgCard, `BG_SOURCE entry for ${cfg.schemeKey} exists`);
   }
 
-  const block = getUseMemoBlock(sf, 'imgSrc');
-  if (!block.getText().includes(cfg.schemeKey)) {
-    (block as any).insertStatements(
-      0,
-      `if (productScheme === CARD_PRODUCT_SCHEME.${cfg.schemeKey}) {\n` +
-        `  return IMAGE_SOURCE[productScheme][cardSide];\n` +
-        `}\n`,
-    );
-    logChange(FILES.vikkiCard, 'imgSrc useMemo guard');
+  const headerSource = getObjectLiteral(sf, 'LOGO_HEADER_SOURCE');
+  if (ensureObjectProperty(headerSource, propName, cfg.headerAsset)) {
+    logChange(FILES.orgCard, `LOGO_HEADER_SOURCE[${cfg.schemeKey}]`);
   } else {
-    logSkip(FILES.vikkiCard, 'imgSrc guard exists');
+    logSkip(FILES.orgCard, `LOGO_HEADER_SOURCE entry for ${cfg.schemeKey} exists`);
   }
 }
 
-export function txCtaBanner(): void {
-  const sf = load(FILES.ctaBanner);
+export function txOrgName(): void {
+  const sf = load(FILES.orgName);
   ensureNamedImport(sf, '@src/modules/card-onboard/constants', 'CARD_PRODUCT_SCHEME');
-  ensureNamedImport(sf, '@src/modules/vikki-go-card/assets', cfg.cardAsset);
 
-  const block = getUseMemoBlock(sf, 'imageSource');
-  if (!block.getText().includes(cfg.schemeKey)) {
-    (block as any).insertStatements(
-      1,
-      `if (productScheme === CARD_PRODUCT_SCHEME.${cfg.schemeKey}) {\n` +
-        `  return ${cfg.cardAsset};\n` +
-        `}\n`,
-    );
-    logChange(FILES.ctaBanner, 'imageSource scheme branch');
-  } else {
-    logSkip(FILES.ctaBanner, 'imageSource branch exists');
+  const propName = `[CARD_PRODUCT_SCHEME.${cfg.schemeKey}]`;
+  const initializer = `{\n  color: ${cfg.textColor},\n}`;
+
+  for (const styleVar of ['nameStyles', 'idStyles', 'jobTitleStyles']) {
+    const obj = getObjectLiteral(sf, styleVar);
+    if (ensureObjectProperty(obj, propName, initializer)) {
+      logChange(FILES.orgName, `${styleVar}[${cfg.schemeKey}]`);
+    } else {
+      logSkip(FILES.orgName, `${styleVar} entry for ${cfg.schemeKey} exists`);
+    }
   }
 }
 
-export function txPrepaidLayout(): void {
-  const sf = load(FILES.prepaidLayout);
+export function txDualCardLayout(): void {
+  const sf = load(FILES.dualCardLayout);
+  ensureNamedImport(sf, '@assets/new-images', cfg.layoutAsset);
   ensureNamedImport(sf, '@src/modules/card-onboard/constants', 'CARD_PRODUCT_SCHEME');
-  ensureNamedImport(sf, '@src/components/vikki-card', 'IMAGE_SOURCE');
 
-  const ifStmt = findIf(sf, `productName === CardProductName.${cfg.baseProduct}`);
-  if (!ifStmt)
-    throw new Error(
-      `PrepaidCardLayoutV3: 'if (productName === CardProductName.${cfg.baseProduct})' not found`,
-    );
-  const thenBlock = ifStmt.getThenStatement();
-  if (!thenBlock.getText().includes(cfg.schemeKey)) {
-    (thenBlock as any).insertStatements(
-      0,
-      `if (productScheme === CARD_PRODUCT_SCHEME.${cfg.schemeKey}) {\n` +
-        `  return IMAGE_SOURCE[productScheme].front;\n` +
-        `}\n`,
-    );
-    logChange(FILES.prepaidLayout, 'cardBanner nested scheme branch');
+  const propName = `[CARD_PRODUCT_SCHEME.${cfg.schemeKey}]`;
+  const source = getObjectLiteral(sf, 'CARD_LAYOUT_SOURCE');
+  if (ensureObjectProperty(source, propName, cfg.layoutAsset)) {
+    logChange(FILES.dualCardLayout, `CARD_LAYOUT_SOURCE[${cfg.schemeKey}]`);
   } else {
-    logSkip(FILES.prepaidLayout, 'cardBanner branch exists');
-  }
-
-  const deps = getUseMemoDeps(sf, 'cardBanner');
-  if (!deps.getElements().some((e) => e.getText() === 'productScheme')) {
-    deps.addElement('productScheme');
-    logChange(FILES.prepaidLayout, 'cardBanner deps += productScheme');
-  } else {
-    logSkip(FILES.prepaidLayout, 'cardBanner deps already include productScheme');
+    logSkip(FILES.dualCardLayout, `CARD_LAYOUT_SOURCE entry for ${cfg.schemeKey} exists`);
   }
 }
 
-export function txTransitCvp(): void {
-  const sf = load(FILES.transitCvp);
+export function txCardBannerItem(): void {
+  const sf = load(FILES.cardBannerItem);
   ensureNamedImport(sf, '@src/modules/card-onboard/constants', 'CARD_PRODUCT_SCHEME');
-  ensureNamedImport(sf, '../assets', cfg.shadowAsset);
+  ensureNamedImport(sf, '../../assets/banner-card-list', cfg.bannerEnAsset);
+  ensureNamedImport(sf, '../../assets/banner-card-list', cfg.bannerViAsset);
 
-  const ifStmt = findIf(
+  const propName = `[CARD_PRODUCT_SCHEME.${cfg.schemeKey}]`;
+  const initializer = `{\n  en: ${cfg.bannerEnAsset},\n  vi: ${cfg.bannerViAsset},\n}`;
+  const source = getObjectLiteral(sf, 'BANNER_SRC');
+  if (ensureObjectProperty(source, propName, initializer)) {
+    logChange(FILES.cardBannerItem, `BANNER_SRC[${cfg.schemeKey}]`);
+  } else {
+    logSkip(FILES.cardBannerItem, `BANNER_SRC entry for ${cfg.schemeKey} exists`);
+  }
+}
+
+export function txCardActivation(): void {
+  const sf = load(FILES.cardActivation);
+  ensureNamedImport(sf, '../card.constants', 'CARD_TEMPLATE');
+  ensureNamedImport(sf, '../assets/org-card', cfg.frontAsset);
+
+  const propName = `[CARD_TEMPLATE.${cfg.templateKey}]`;
+  const initializer = `{\n  front: ${cfg.frontAsset},\n  back: DualCardBack,\n}`;
+  const source = getObjectLiteral(sf, 'IMAGE_SOURCE');
+  if (ensureObjectProperty(source, propName, initializer)) {
+    logChange(FILES.cardActivation, `IMAGE_SOURCE[${cfg.templateKey}]`);
+  } else {
+    logSkip(FILES.cardActivation, `IMAGE_SOURCE entry for ${cfg.templateKey} exists`);
+  }
+}
+
+export function txPhysicalCardIntro(): void {
+  const sf = load(FILES.physicalCardIntro);
+  ensureNamedImport(sf, '@src/modules/cards/card.constants', 'CARD_TEMPLATE');
+  ensureNamedImport(sf, '@src/modules/cards/assets/org-card', cfg.frontAsset);
+
+  const propName = `[CARD_TEMPLATE.${cfg.templateKey}]`;
+  const source = getObjectLiteral(sf, 'IMAGE_SOURCE');
+  if (ensureObjectProperty(source, propName, cfg.frontAsset)) {
+    logChange(FILES.physicalCardIntro, `IMAGE_SOURCE[${cfg.templateKey}]`);
+  } else {
+    logSkip(FILES.physicalCardIntro, `IMAGE_SOURCE entry for ${cfg.templateKey} exists`);
+  }
+}
+
+export function txTodoItem(): void {
+  const sf = load(FILES.todoItem);
+  const source = getObjectLiteral(sf, 'HomeTodoType');
+  if (ensureObjectProperty(source, cfg.homeTodoKey, `'${cfg.homeTodoKey}'`)) {
+    logChange(FILES.todoItem, `HomeTodoType.${cfg.homeTodoKey}`);
+  } else {
+    logSkip(FILES.todoItem, `HomeTodoType.${cfg.homeTodoKey} already present`);
+  }
+}
+
+export function txUseHomeTodo(): void {
+  const sf = load(FILES.useHomeTodo);
+  if (sf.getFullText().includes(`HomeTodoType.${cfg.homeTodoKey}]`)) {
+    logSkip(FILES.useHomeTodo, `todos[HomeTodoType.${cfg.homeTodoKey}] assignment exists`);
+    return;
+  }
+  const stmt =
+    `todos[HomeTodoType.${cfg.homeTodoKey}] =\n` +
+    `  findVikkiOneConnectBanner(\n` +
+    `    todos[HomeTodoType.${cfg.homeTodoKey}],\n` +
+    `    [CARD_PRODUCT_SCHEME.${cfg.schemeKey}],\n` +
+    `  );\n`;
+  const inserted = insertStatementAfter(
     sf,
-    `params.productName === CardProductName.${cfg.baseProduct}`,
+    'todos[HomeTodoType.HDB_VIKKI_ONE_CONNECT_ONBOARD] =',
+    stmt,
   );
-  if (!ifStmt)
+  if (!inserted)
     throw new Error(
-      `TransitCardCvpScreen: base-product if for ${cfg.baseProduct} not found`,
+      'useHomeTodo: anchor statement "todos[HomeTodoType.HDB_VIKKI_ONE_CONNECT_ONBOARD] = ..." not found',
     );
-  const thenBlock = ifStmt.getThenStatement();
-  if (!thenBlock.getText().includes(cfg.schemeKey)) {
-    (thenBlock as any).insertStatements(
-      0,
-      `if (\n` +
-        `  params?.productScheme ===\n` +
-        `  CARD_PRODUCT_SCHEME.${cfg.schemeKey}\n` +
-        `) {\n` +
-        `  return {\n` +
-        `    cardImg: ${cfg.shadowAsset},\n` +
-        `    desciption: t('vikkigo.exploreYourNewCard'),\n` +
-        `  };\n` +
-        `}\n`,
-    );
-    logChange(FILES.transitCvp, 'contentCard nested scheme branch');
-  } else {
-    logSkip(FILES.transitCvp, 'contentCard branch exists');
-  }
-}
-
-export function txSaga(): void {
-  const sf = load(FILES.saga);
-  const call = sf
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .find(
-      (c) =>
-        c.getExpression().getText() === 'navigate' &&
-        c.getArguments()[0] &&
-        c.getArguments()[0].getText().includes('VIKKI_GO.CVP_SCREEN'),
-    );
-  if (!call)
-    throw new Error('saga: navigate(ROUTES.VIKKI_GO.CVP_SCREEN, {...}) not found');
-  const obj = call.getArguments()[1].asKindOrThrow(SyntaxKind.ObjectLiteralExpression);
-  if (!obj.getProperty('productScheme')) {
-    obj.addPropertyAssignment({
-      name: 'productScheme',
-      initializer: 'response.payload.productScheme',
-    });
-    logChange(FILES.saga, 'navigate payload += productScheme');
-  } else {
-    logSkip(FILES.saga, 'navigate payload already has productScheme');
-  }
-}
-
-export function txNavigation(): void {
-  const sf = load(FILES.navigation);
-  ensureNamedImport(sf, '../card-onboard/constants', 'CARD_PRODUCT_SCHEME');
-
-  const alias = sf.getTypeAliasOrThrow('VikkiGoParamList');
-  const litType = alias.getTypeNodeOrThrow();
-  const cvpProp = litType
-    .getDescendantsOfKind(SyntaxKind.PropertySignature)
-    .find((p) => p.getName().includes('CVP_SCREEN'));
-  if (!cvpProp) throw new Error('navigation: CVP_SCREEN ParamList entry not found');
-  const cvpType = cvpProp.getTypeNodeOrThrow();
-  const has = cvpType
-    .getDescendantsOfKind(SyntaxKind.PropertySignature)
-    .some((p) => p.getName() === 'productScheme');
-  if (!has) {
-    (cvpType as any).addProperty({
-      name: 'productScheme',
-      hasQuestionToken: true,
-      type: 'CARD_PRODUCT_SCHEME',
-    });
-    logChange(FILES.navigation, 'CVP_SCREEN ParamList += productScheme');
-  } else {
-    logSkip(FILES.navigation, 'CVP_SCREEN ParamList already has productScheme');
-  }
+  logChange(FILES.useHomeTodo, `todos[HomeTodoType.${cfg.homeTodoKey}] assignment`);
 }
 
 /** Order matters: constants/assets are registered before the files that reference them. */
 export const TRANSFORMS: Array<() => void> = [
-  txConstants,
-  txGoAssets,
-  txCardImages,
-  txVikkiCard,
-  txCtaBanner,
-  txPrepaidLayout,
-  txTransitCvp,
-  txSaga,
-  txNavigation,
+  txSchemeConstants,
+  txCardConstants,
+  txLayoutAsset,
+  txBannerAssets,
+  txOrgCardAssets,
+  txOrgCard,
+  txOrgName,
+  txDualCardLayout,
+  txCardBannerItem,
+  txCardActivation,
+  txPhysicalCardIntro,
+  txTodoItem,
+  txUseHomeTodo,
 ];

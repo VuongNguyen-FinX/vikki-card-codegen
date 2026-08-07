@@ -23,23 +23,40 @@ function parseArgs(argv: string[]): RawArgs {
 export const args = parseArgs(process.argv.slice(2));
 
 export const USAGE = `
-gen-card-scheme — wire a new prepaid card scheme variant into vikki-host-app.
+gen-card-scheme — wire a new VIKKI_ONE_CONNECT org-card scheme variant into
+vikki-host-app (mirrors PR #3378 "add org card DAMTC" — org-card /
+physical-card flow: VikkiOrgCard, VikkiOrgName, DualCardLayout,
+CardBannerItem, CardActivationScreen, PhysicalCardIntroScreen, home todos).
 
 Required:
-  --scheme <KEY>     enum member added to CARD_PRODUCT_SCHEME
-  --base   <NAME>    CardProductName this scheme branches under (e.g. VIKKI_ONE_CONNECT_PREPAID)
-  --shadow <Asset>   shadow image asset name in vikki-go-card/assets
-  --layout <Asset>   layout image asset name in assets/new-images/card
+  --scheme         <KEY>    enum member added to CARD_PRODUCT_SCHEME
+  --template-value  <str>   card-number prefix for CARD_TEMPLATE, e.g. VK0302391568E
+
+Optional (all asset/name flags default from --scheme when omitted):
+  --value          <str>    CARD_PRODUCT_SCHEME string value (default: --scheme)
+  --template-key   <KEY>    CARD_TEMPLATE enum member (default: --scheme minus the
+                             VIKKI_ONE_CONNECT_ prefix, e.g. DAMTC_EMPLOYEE)
+  --brand          <Name>   PascalCase brand code seeding the asset defaults below
+                             (default: PascalCase of --template-key)
+  --header         <Asset>  org-card header/logo asset (default: <brand>Header)
+  --bg             <Asset>  org-card background asset (default: <brand>BG)
+  --front          <Asset>  physical-card front asset (default: <brand>Front)
+  --layout         <Asset>  dual-card layout asset (default: <brand>VikkiOneConnectLayout)
+  --banner-en      <Asset>  home banner, EN (default: <brand>VikkiOneConnectBannerEN)
+  --banner-vi      <Asset>  home banner, VI (default: <brand>VikkiOneConnectBannerVI)
+  --home-todo      <KEY>    HomeTodoType member (default: first segment of
+                             --template-key + _VIKKI_ONE_CONNECT_ONBOARD)
+  --color          <expr>   color expression for VikkiOrgName styles
+                             (default: Colors.Labels.StrongWhite)
 
 Image files (optional — copied into the asset folders, renamed to the asset name):
-  --card-img   <path>  source .webp for the card image
-  --shadow-img <path>  source .webp for the shadow image
-  --layout-img <path>  source .webp for the layout image
+  --header-img     <path>   source .webp for the header asset
+  --bg-img         <path>   source .webp for the background asset
+  --front-img      <path>   source .webp for the front asset
+  --layout-img     <path>   source .webp for the layout asset
+  --banner-en-img  <path>   source .webp for the EN banner asset
+  --banner-vi-img  <path>   source .webp for the VI banner asset
 
-Optional:
-  --value  <str>     enum string value (defaults to --scheme)
-  --card   <Asset>   card image asset name (default: derived from --scheme, e.g.
-                      VIKKI_ONE_CONNECT_UEF_STUDENT → UefStudentVikkiOneConnect)
   --root   <path>    path to vikki-host-app root (default: auto-detect from cwd)
   --interactive, -i  force the interactive wizard
   --dry-run          print planned changes, write nothing
@@ -53,7 +70,7 @@ if (args.help) {
   process.exit(0);
 }
 
-export const REQUIRED = ['scheme', 'base', 'shadow', 'layout'] as const;
+export const REQUIRED = ['scheme', 'template-value'] as const;
 
 /** SCREAMING_SNAKE / kebab segment → PascalCase word (`STUDENT_CERGY` → `StudentCergy`). */
 function toPascalCase(raw: string): string {
@@ -64,40 +81,55 @@ function toPascalCase(raw: string): string {
     .join('');
 }
 
-/**
- * Default asset base name when `--card` is omitted, derived from the scheme
- * key/value: strip the shared `VIKKI_ONE_CONNECT_` prefix (if present) and
- * PascalCase what's left, then re-append `VikkiOneConnect` so it reads the
- * same as the hand-typed convention already used in the codebase
- * (e.g. `VIKKI_ONE_CONNECT_UEF_STUDENT` → `UefStudentVikkiOneConnect`).
- * Falls back to a plain PascalCase of the whole key when the prefix isn't
- * there (i.e. the scheme doesn't branch under VIKKI_ONE_CONNECT_PREPAID).
- */
-export function deriveAssetBase(schemeKey: string, schemeValue?: string): string {
-  const raw = schemeKey || schemeValue || '';
-  const PREFIX = 'VIKKI_ONE_CONNECT_';
-  const upper = raw.toUpperCase();
-  if (upper.startsWith(PREFIX)) {
-    return `${toPascalCase(raw.slice(PREFIX.length))}VikkiOneConnect`;
-  }
-  return toPascalCase(raw);
+const SCHEME_PREFIX = 'VIKKI_ONE_CONNECT_';
+
+/** `VIKKI_ONE_CONNECT_DAMTC_EMPLOYEE` → `DAMTC_EMPLOYEE` (falls back to the raw key). */
+export function deriveTemplateKey(schemeKey: string): string {
+  return schemeKey.toUpperCase().startsWith(SCHEME_PREFIX)
+    ? schemeKey.slice(SCHEME_PREFIX.length)
+    : schemeKey;
+}
+
+/** PascalCase brand seed for asset-name defaults, e.g. `DAMTC_EMPLOYEE` → `DamtcEmployee`. */
+export function deriveBrand(templateKey: string): string {
+  return toPascalCase(templateKey);
+}
+
+/** First underscore-segment of the template key, e.g. `DAMTC_EMPLOYEE` → `DAMTC`. */
+export function deriveHomeTodoKey(templateKey: string): string {
+  return `${templateKey.split('_')[0]}_VIKKI_ONE_CONNECT_ONBOARD`;
 }
 
 /** Build cfg from a plain object of answers (CLI flags or wizard responses). */
 export function buildCfg(a: RawArgs): Cfg {
   const schemeKey = a.scheme as string;
   const schemeValue = (a.value as string) || schemeKey;
-  const cardAsset = (a.card as string) || deriveAssetBase(schemeKey, schemeValue);
+  const templateKey = (a['template-key'] as string) || deriveTemplateKey(schemeKey);
+  const brand = (a.brand as string) || deriveBrand(templateKey);
+
   return {
     schemeKey,
     schemeValue,
-    baseProduct: a.base as string,
-    cardAsset,
-    shadowAsset: (a.shadow as string) || `${cardAsset}Shadow`,
-    layoutAsset: (a.layout as string) || `${cardAsset}Layout`,
-    cardImg: (a['card-img'] as string) || null,
-    shadowImg: (a['shadow-img'] as string) || null,
+    templateKey,
+    templateValue: a['template-value'] as string,
+
+    headerAsset: (a.header as string) || `${brand}Header`,
+    bgAsset: (a.bg as string) || `${brand}BG`,
+    frontAsset: (a.front as string) || `${brand}Front`,
+    layoutAsset: (a.layout as string) || `${brand}VikkiOneConnectLayout`,
+    bannerEnAsset: (a['banner-en'] as string) || `${brand}VikkiOneConnectBannerEN`,
+    bannerViAsset: (a['banner-vi'] as string) || `${brand}VikkiOneConnectBannerVI`,
+
+    homeTodoKey: (a['home-todo'] as string) || deriveHomeTodoKey(templateKey),
+    textColor: (a.color as string) || 'Colors.Labels.StrongWhite',
+
+    headerImg: (a['header-img'] as string) || null,
+    bgImg: (a['bg-img'] as string) || null,
+    frontImg: (a['front-img'] as string) || null,
     layoutImg: (a['layout-img'] as string) || null,
+    bannerEnImg: (a['banner-en-img'] as string) || null,
+    bannerViImg: (a['banner-vi-img'] as string) || null,
+
     dryRun: !!a.dryRun,
   };
 }
